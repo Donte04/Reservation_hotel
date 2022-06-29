@@ -1,0 +1,191 @@
+import express from "express"
+//const express = require("express")
+
+import dotenv from "dotenv"
+import mongoose from "mongoose"
+import authRoute from "./routes/auth.js"
+import usersRoute from "./routes/users.js"
+import hotelsRoute from "./routes/hotels.js"
+import roomsRoute from "./routes/rooms.js"
+import { MongoClient } from "mongodb"
+
+
+const app = express()
+dotenv.config()
+
+const connect = async () => {
+	const client = new MongoClient(process.env.MONGO)
+	try {
+		await client.connect()
+		console.log("MongoDB is connected!")
+		
+		/*
+		await create_doc(client, [
+			{
+			"name":"Hotel three",
+			"type": "hotel",
+    			"city": "Mahanjunga",
+    			"address": "somewhere",
+    			"distance": "12000",
+    			"title": "Sunset Hotel",
+    			"desc": "description here",
+    			"cheapestPrice": "500"
+			},
+			{
+			"name":"Hotel four",
+			"type": "hotel",
+    			"city": "Tamaga",
+    			"address": "somewhere",
+    			"distance": "3000",
+    			"title": "Soup Hotel",
+    			"desc": "description here",
+    			"cheapestPrice": "400"
+			}, 
+			{
+			"name":"Hotel five",
+			"type": "hotel",
+    			"city": "Tulear",
+    			"address": "somewhere",
+    			"distance": "20000",
+    			"title": "Hot Hotel",
+    			"desc": "description here",
+    			"cheapestPrice": "700"
+			},
+		])
+		*/
+
+		//await read_doc(client, 'Hotel four')
+		
+		/*
+		await read_specifics_docs(client, {
+			min_distance : "1000",
+			min_cheapestPrice : "500",
+			maximumNumberOfResults : 5
+		})
+		*/
+
+		await update_doc(client, "Hotel One", { name : "Hotel One updated" })
+
+		await listDatabases(client)
+	}
+	catch(e) {
+		console.error(e)
+	}
+	finally {
+		await client.close() 
+	}
+}
+
+// list/retrieve the collections in the database
+async function listDatabases (client) {
+	try {
+		const databasesList = await client.db().admin().listDatabases()
+
+		console.log("Databases:")
+		databasesList.databases.forEach(db => {
+			console.log(`- ${db.name}`)
+		})
+	} catch (e) {
+		console.error(e)
+	}
+}
+
+//CRUD mongoDB without mongoose and route: using the mongoDB collection's methods (insertOne(), insertMany(), findOne(), findMany(), updateOne(), updateMany(), deleteOne(), deleteMany()) 
+
+//CREATE ONE OR MANY DOCUMENTS: insertOne(doc) and insertMany(array_of_doc)
+async function create_doc(client, newDoc) {
+	
+	//create many documents
+	if (newDoc.length > 1 ) {
+	const result = await client.db("booking").collection("hotels").insertMany(newDoc)
+	console.log(`${result.insertedCount} new hotels with ids:`)
+	console.log(result.insertedIds)}
+	
+	//create one document
+	else {
+	const result = await client.db("booking").collection("hotels").insertOne(newDoc)
+	console.log(`New hotel created with id: ${result.insertedId}`)
+	}
+}
+
+//FIND/READ ONE DOCUMENT: findOne(query_object) such as query_object is a doc using query operations
+async function read_doc(client, elementDoc) {
+	const result = await client.db("booking").collection("hotels").findOne({name : elementDoc})
+	if (result) {
+		console.log(`Found the name : ${elementDoc}`)
+	} else {
+		console.log(`${elementDoc} not found`)
+	}
+}
+
+//FIND/READ MULTIPLE DOCUMENTS WHICH CAN BE SPECIFICS: find(query_object)
+async function read_specifics_docs(client, {
+	min_distance = 0,
+	min_cheapestPrice = 0,
+	maximumNumberOfResults = Number.MAX_SAFE_INTEGER
+} = {}) {
+	//sometimesm, a collection's method, which has a set of results, uses cursor to handle them
+	//here, sort(), limit() and toArray() are cursor's methods
+	const cursor = client.db("booking").collection("hotels").find({
+		distance: { $gte: min_distance },
+		cheapestPrice: { $gte: min_cheapestPrice },
+	}).sort({ last_review: -1 })
+	.limit(maximumNumberOfResults)
+
+	const results = await cursor.toArray()
+
+	if (results.length > 0) {
+		console.log(`Found hotels with at least ${min_distance} meters and ${min_cheapestPrice} Ariary: `)
+		results.forEach((result, i) => {
+			//date = new Date(result.last_review).toDateString()	
+			console.log()
+			console.log(`${i + 1}.name: ${result.name}`)
+			console.log(`	_id: ${result._id}`)
+			console.log(`	Distance: ${result.distance}`)
+			console.log(`	Price: ${result.cheapestPrice}`)})
+	} else {
+		console.log(`No hotels with ${min_distance} meters and ${min_cheapestPrice} Ariary`)
+	}
+}
+
+//UPDATE ONE DOCUMENT: updateOne(filter, update_object) such as a filter is similar to query_object and update_object is a query_object but which use update operations (e.g: $inc, $currentDate, $set, $unset)
+const update_doc = async (client, name_of, updated_hotel) => {
+	const result = client.db("booking").collection("hotels").updateOne({name : name_of}, {$set: updated_hotel})
+
+	console.log(`${result.matchedCount} document(s) matched the query criteria`)
+	console.log(`${result.modifiedCount} document(s) was/were updated`)
+}
+
+
+/*
+//once this connection is etablished, it will automatically reconnect if it is interupted
+const connect = async () => {
+	try {
+		await mongoose.connect(process.env.MONGO)
+	} catch (error){
+		handleError
+		throw error
+	}
+}
+*/
+
+mongoose.connection.on("disconnected", ()=>{
+	console.log("MongoDB disconnected...")})
+mongoose.connection.on("connected", ()=>{
+	console.log("MongoDB connected!")
+})
+
+//middlewares 
+
+app.use(express.json())
+
+app.use("/api/auth", authRoute)
+app.use("/api/users", usersRoute)
+app.use("/api/hotels", hotelsRoute)
+app.use("/api/rooms", roomsRoute)
+
+//listen to a port + return of a callback function in case of connection
+app.listen(8800, ()=>{
+	connect()
+	console.log("Connected to backend!")
+})
